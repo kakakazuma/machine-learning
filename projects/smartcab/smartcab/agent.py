@@ -1,5 +1,6 @@
 import random
 import math
+import itertools
 from environment import Agent, Environment
 from planner import RoutePlanner
 from simulator import Simulator
@@ -23,7 +24,48 @@ class LearningAgent(Agent):
         ## TO DO ##
         ###########
         # Set any additional class parameters as needed
+        self.trial_num = 0
 
+    def action_to_key(self, action_str):
+        return self.direction_to_number(action_str)
+
+    def state_to_key(self, state):
+        key = 'state-'
+        for i in range(len(state)):
+            if i == 1:
+                key += str(self.color_to_number(state[i]))
+            else:
+                key += str(self.direction_to_number(state[i]))
+        return key
+
+    def number_to_direction(self, direction_num):
+        if direction_num == 0:
+            return None
+        elif direction_num == 1:
+            return "forward"
+        elif direction_num == 2:
+            return "left"
+        elif direction_num == 3:
+            return "right"
+        return None
+
+    def direction_to_number(self, direction_str):
+        if direction_str is None:
+            return 0
+        elif direction_str == "forward":
+            return 1
+        elif direction_str == "left":
+            return 2
+        elif direction_str == "right":
+            return 3
+        return 0
+
+    def color_to_number(self, color_str):
+        if color_str == "red":
+            return 0
+        elif color_str == "green":
+            return 1
+        return 0
 
     def reset(self, destination=None, testing=False):
         """ The reset function is called at the beginning of each trial.
@@ -39,7 +81,13 @@ class LearningAgent(Agent):
         # Update epsilon using a decay function of your choice
         # Update additional class parameters as needed
         # If 'testing' is True, set epsilon and alpha to 0
-
+        if testing == True:
+            self.epsilon = 0
+            self.alpha = 0
+        else:
+            if self.trial_num > 0:
+                self.epsilon = self.epsilon - 0.0025
+            self.trial_num += 1
         return None
 
     def build_state(self):
@@ -56,10 +104,19 @@ class LearningAgent(Agent):
         ## TO DO ##
         ###########
         # Set 'state' as a tuple of relevant data for the agent        
-        state = None
-
+        state = (waypoint, inputs['light'], inputs['left'], inputs['oncoming'], inputs['right'])
         return state
 
+    def get_Q_Value(self, state, action):
+        action_dict = self.Q[self.state_to_key(state)]
+        action_key = self.action_to_key(action)
+        return action_dict[action_key]
+
+    def set_Q_Value(self, state, action, value):
+        action_dict = self.Q[self.state_to_key(state)]
+        action_key = self.action_to_key(action)
+        action_dict[action_key] = value
+        return
 
     def get_maxQ(self, state):
         """ The get_max_Q function is called when the agent is asked to find the
@@ -69,10 +126,14 @@ class LearningAgent(Agent):
         ## TO DO ##
         ###########
         # Calculate the maximum Q-value of all actions for a given state
-
         maxQ = None
-
-        return maxQ 
+        max_value = -1
+        for action in self.env.valid_actions:
+            q_value = self.get_Q_Value(state, action)
+            if q_value > max_value:
+                max_value = q_value
+                maxQ = action
+        return maxQ
 
 
     def createQ(self, state):
@@ -84,7 +145,16 @@ class LearningAgent(Agent):
         # When learning, check if the 'state' is not in the Q-table
         # If it is not, create a new dictionary for that state
         #   Then, for each action available, set the initial Q-value to 0.0
-
+        if self.learning == True:
+            state_key = self.state_to_key(state)
+            if not self.Q.has_key(state_key):
+                directions = ["forward", "left", "right", None]
+                action_dict = dict()
+                for v in directions:
+                    #Initialize each Q(s, a) by 0.
+                    action_key = self.action_to_key(v)
+                    action_dict[action_key] = 0.0
+                self.Q[state_key] = action_dict
         return
 
 
@@ -95,7 +165,6 @@ class LearningAgent(Agent):
         # Set the agent state and default action
         self.state = state
         self.next_waypoint = self.planner.next_waypoint()
-        action = None
 
         ########### 
         ## TO DO ##
@@ -103,8 +172,15 @@ class LearningAgent(Agent):
         # When not learning, choose a random action
         # When learning, choose a random action with 'epsilon' probability
         #   Otherwise, choose an action with the highest Q-value for the current state
- 
-        return action
+        choose_random = True
+        if self.learning:
+            ran = random.randrange(1000)
+            if self.epsilon * 1000 < ran:
+                choose_random = False
+        if choose_random == True:
+            return self.env.valid_actions[random.randrange(len(self.env.valid_actions))]
+        else:
+            return self.get_maxQ(state)
 
 
     def learn(self, state, action, reward):
@@ -117,7 +193,10 @@ class LearningAgent(Agent):
         ###########
         # When learning, implement the value iteration update rule
         #   Use only the learning rate 'alpha' (do not use the discount factor 'gamma')
-
+        if self.learning == True:
+            current_q_value = self.get_Q_Value(state, action)
+            new_q_value = current_q_value + self.alpha * (reward - current_q_value)
+            self.set_Q_Value(state, action, new_q_value)
         return
 
 
@@ -153,13 +232,13 @@ def run():
     #   learning   - set to True to force the driving agent to use Q-learning
     #    * epsilon - continuous value for the exploration factor, default is 1
     #    * alpha   - continuous value for the learning rate, default is 0.5
-    agent = env.create_agent(LearningAgent)
+    agent = env.create_agent(LearningAgent, learning=False, alpha=0.5)
     
     ##############
     # Follow the driving agent
     # Flags:
     #   enforce_deadline - set to True to enforce a deadline metric
-    env.set_primary_agent(agent)
+    env.set_primary_agent(agent, enforce_deadline=True)
 
     ##############
     # Create the simulation
@@ -168,14 +247,14 @@ def run():
     #   display      - set to False to disable the GUI if PyGame is enabled
     #   log_metrics  - set to True to log trial and simulation results to /logs
     #   optimized    - set to True to change the default log file name
-    sim = Simulator(env)
+    sim = Simulator(env, update_delay=0.001, log_metrics=True, display=False, optimized=True)
     
     ##############
     # Run the simulator
     # Flags:
     #   tolerance  - epsilon tolerance before beginning testing, default is 0.05 
     #   n_test     - discrete number of testing trials to perform, default is 0
-    sim.run()
+    sim.run(n_test=10, tolerance=0.01)
 
 
 if __name__ == '__main__':
