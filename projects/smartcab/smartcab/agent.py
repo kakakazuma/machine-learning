@@ -26,47 +26,6 @@ class LearningAgent(Agent):
         # Set any additional class parameters as needed
         self.trial_num = 0
 
-    def action_to_key(self, action_str):
-        return self.direction_to_number(action_str)
-
-    def state_to_key(self, state):
-        key = 'state-'
-        for i in range(len(state)):
-            if i == 1:
-                key += str(self.color_to_number(state[i]))
-            else:
-                key += str(self.direction_to_number(state[i]))
-        return key
-
-    def number_to_direction(self, direction_num):
-        if direction_num == 0:
-            return None
-        elif direction_num == 1:
-            return "forward"
-        elif direction_num == 2:
-            return "left"
-        elif direction_num == 3:
-            return "right"
-        return None
-
-    def direction_to_number(self, direction_str):
-        if direction_str is None:
-            return 0
-        elif direction_str == "forward":
-            return 1
-        elif direction_str == "left":
-            return 2
-        elif direction_str == "right":
-            return 3
-        return 0
-
-    def color_to_number(self, color_str):
-        if color_str == "red":
-            return 0
-        elif color_str == "green":
-            return 1
-        return 0
-
     def reset(self, destination=None, testing=False):
         """ The reset function is called at the beginning of each trial.
             'testing' is set to True if testing trials are being used
@@ -104,18 +63,14 @@ class LearningAgent(Agent):
         ## TO DO ##
         ###########
         # Set 'state' as a tuple of relevant data for the agent        
-        state = (waypoint, inputs['light'], inputs['left'], inputs['oncoming'], inputs['right'])
+        state = (waypoint, inputs['light'], inputs['left'], inputs['oncoming'])
         return state
 
     def get_Q_Value(self, state, action):
-        action_dict = self.Q[self.state_to_key(state)]
-        action_key = self.action_to_key(action)
-        return action_dict[action_key]
+        return self.Q[state][action]
 
     def set_Q_Value(self, state, action, value):
-        action_dict = self.Q[self.state_to_key(state)]
-        action_key = self.action_to_key(action)
-        action_dict[action_key] = value
+        self.Q[state][action] = value
         return
 
     def get_maxQ(self, state):
@@ -126,13 +81,7 @@ class LearningAgent(Agent):
         ## TO DO ##
         ###########
         # Calculate the maximum Q-value of all actions for a given state
-        maxQ = None
-        max_value = -1
-        for action in self.env.valid_actions:
-            q_value = self.get_Q_Value(state, action)
-            if q_value > max_value:
-                max_value = q_value
-                maxQ = action
+        maxQ = max(self.Q[state].values())
         return maxQ
 
 
@@ -146,15 +95,13 @@ class LearningAgent(Agent):
         # If it is not, create a new dictionary for that state
         #   Then, for each action available, set the initial Q-value to 0.0
         if self.learning == True:
-            state_key = self.state_to_key(state)
-            if not self.Q.has_key(state_key):
-                directions = ["forward", "left", "right", None]
+            if not self.Q.has_key(state):
+                actions = self.env.valid_actions
                 action_dict = dict()
-                for v in directions:
+                for action in actions:
                     #Initialize each Q(s, a) by 0.
-                    action_key = self.action_to_key(v)
-                    action_dict[action_key] = 0.0
-                self.Q[state_key] = action_dict
+                    action_dict[action] = 0.0
+                self.Q[state] = action_dict
         return
 
 
@@ -178,9 +125,11 @@ class LearningAgent(Agent):
             if self.epsilon * 1000 < ran:
                 choose_random = False
         if choose_random == True:
-            return self.env.valid_actions[random.randrange(len(self.env.valid_actions))]
+            return random.choice(self.env.valid_actions)
         else:
-            return self.get_maxQ(state)
+            max_q = self.get_maxQ(state)
+            actions = [action for action, v in self.Q[state].items() if v == max_q]
+            return random.choice(actions)
 
 
     def learn(self, state, action, reward):
@@ -232,7 +181,7 @@ def run():
     #   learning   - set to True to force the driving agent to use Q-learning
     #    * epsilon - continuous value for the exploration factor, default is 1
     #    * alpha   - continuous value for the learning rate, default is 0.5
-    agent = env.create_agent(LearningAgent, learning=False, alpha=0.5)
+    agent = env.create_agent(LearningAgent, learning=True, alpha=0.5)
     
     ##############
     # Follow the driving agent
@@ -254,7 +203,7 @@ def run():
     # Flags:
     #   tolerance  - epsilon tolerance before beginning testing, default is 0.05 
     #   n_test     - discrete number of testing trials to perform, default is 0
-    sim.run(n_test=10, tolerance=0.01)
+    sim.run(n_test=100, tolerance=0.01)
 
 
 if __name__ == '__main__':
